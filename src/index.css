@@ -43,7 +43,12 @@
   animation: pulse-subtle 2.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-/* Ocultar cualquier badge o widget externo de hosting (ej. Netlify) */
+/* Ocultar cualquier badge, botón flotante o widget externo de Netlify ("Powered by Netlify") */
+html > *:not(head):not(body),
+body > *:not(#root):not(script):not(style):not(link),
+a[href*="netlify.com"],
+[class*="netlify"],
+[id*="netlify"],
 [data-netlify-deploy-badge],
 .netlify-identity-button,
 #netlify-identity-widget,
@@ -52,4 +57,13 @@ iframe[src*="netlify"] {
   visibility: hidden !important;
   opacity: 0 !important;
   pointer-events: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  max-width: 0 !important;
+  max-height: 0 !important;
+  overflow: hidden !important;
+  position: fixed !important;
+  bottom: -9999px !important;
+  right: -9999px !important;
+  z-index: -9999 !important;
 }
