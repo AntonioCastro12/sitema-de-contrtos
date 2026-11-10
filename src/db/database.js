@@ -157,6 +157,9 @@ export async function guardarContratoLocal(datosCierre) {
     },
     empresa: datosCierre.empresa.trim(),
     representante: datosCierre.representante.trim(),
+    vendedor: (datosCierre.vendedor || 'Vendedor en Campo').trim() || 'Vendedor en Campo',
+    comisionPorcentaje: 25,
+    comisionPagada: false,
     telefono: datosCierre.telefono.trim(),
     correo: (datosCierre.correo || '').trim(),
     domicilio: (datosCierre.domicilio || '').trim(),
@@ -335,6 +338,14 @@ export async function actualizarAvanceIngenieria(id, nuevosDatosEtapa) {
     etapaIngenieria: etapaActualizada
   });
 
+  return await db.contratos.get(id);
+}
+
+/**
+ * Actualiza el vendedor asignado o el estado de pago de su comisión del 25%
+ */
+export async function actualizarDatosComisionVendedor(id, cambiosComision) {
+  await db.contratos.update(id, cambiosComision);
   return await db.contratos.get(id);
 }
 

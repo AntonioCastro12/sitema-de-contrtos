@@ -1,11 +1,11 @@
 import React from 'react';
-import { FilePlus2, FolderKanban, CalendarClock, Lock } from 'lucide-react';
+import { FilePlus2, FolderKanban, BarChart3, Lock } from 'lucide-react';
 
 export default function BottomNav({ activeTab, onChangeTab, totalContratos, pendientesCount }) {
   return (
     <nav
-      aria-label="Navegación principal inferior"
-      className="fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-slate-200/80 shadow-nav"
+      aria-label="Navegación principal móvil"
+      className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-slate-200/80 shadow-nav"
     >
       <div className="max-w-md mx-auto grid grid-cols-3 h-16 px-2.5 py-1.5 gap-1.5">
         {/* Pestaña 1: Nuevo Cierre */}
@@ -62,7 +62,7 @@ export default function BottomNav({ activeTab, onChangeTab, totalContratos, pend
           )}
         </button>
 
-        {/* Pestaña 3: Línea de Tiempo (Solo Admin con PIN) */}
+        {/* Pestaña 3: Panel de Administrador (Ventas 25% + Línea de Tiempo con PIN) */}
         <button
           type="button"
           onClick={() => onChangeTab('timeline')}
@@ -72,12 +72,12 @@ export default function BottomNav({ activeTab, onChangeTab, totalContratos, pend
               : 'text-slate-500 font-medium hover:bg-slate-100'
           }`}
         >
-          <CalendarClock
+          <BarChart3
             className={`w-4 h-4 ${
               activeTab === 'timeline' ? 'text-amber-300' : 'text-slate-400'
             }`}
           />
-          <span className="text-[11px]">Entregas</span>
+          <span className="text-[11px]">Admin</span>
           <Lock
             className={`w-3 h-3 ${
               activeTab === 'timeline' ? 'text-white/80' : 'text-slate-400'

@@ -42,3 +42,14 @@
 .animate-pulse-subtle {
   animation: pulse-subtle 2.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
+
+/* Ocultar cualquier badge o widget externo de hosting (ej. Netlify) */
+[data-netlify-deploy-badge],
+.netlify-identity-button,
+#netlify-identity-widget,
+iframe[src*="netlify"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}

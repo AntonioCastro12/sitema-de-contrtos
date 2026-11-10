@@ -191,10 +191,13 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#F8FAFC] text-slate-900">
-      {/* Barra Superior */}
+      {/* Barra Superior Responsiva (Con pestañas integradas en Laptop y compacta en Celular) */}
       <Header
         isOnline={isOnline}
         pendientesCount={pendientesCount}
+        totalContratos={contratos.length}
+        activeTab={activeTab}
+        onChangeTab={setActiveTab}
         isSyncing={isSyncing}
         onSyncNow={() => ejecutarSincronizacion(false)}
         onOpenSettings={() => setMostrarConfigModal(true)}
