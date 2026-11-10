@@ -16,7 +16,7 @@ export default defineConfig({
         theme_color: '#1E3A5F',
         background_color: '#F8FAFC',
         display: 'standalone',
-        orientation: 'portrait',
+        orientation: 'any',
         start_url: '/',
         icons: [
           {
@@ -39,6 +39,7 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,jpg,svg,woff2}'],
+        navigateFallbackDenylist: [/^\/\.netlify/, /^\/api/],
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024, // 6MB para incluir pdfmake + vfs_fonts completos en precache
         cleanupOutdatedCaches: true,
         clientsClaim: true,

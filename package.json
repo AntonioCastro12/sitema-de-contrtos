@@ -10,6 +10,7 @@
     "preview": "node ./node_modules/vite/bin/vite.js preview"
   },
   "dependencies": {
+    "@netlify/blobs": "^11.1.9",
     "dexie": "^4.0.8",
     "lucide-react": "^0.454.0",
     "pdfmake": "^0.2.14",

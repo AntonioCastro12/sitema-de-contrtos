@@ -32,7 +32,8 @@ import {
   obtenerDatosInversionAdmin,
   guardarDatosInversionAdmin,
   agregarPartidaInversion,
-  eliminarPartidaInversion
+  eliminarPartidaInversion,
+  sincronizarDispositivosNube
 } from '../db/database';
 import {
   formatearMonedaMXN,
@@ -104,12 +105,16 @@ export default function PanelAdminTimeline({
   onNotificar
 }) {
   const recargarDatos = onRecargar || onActualizarContratos;
-  const config = obtenerConfigSincronizacion();
-  const pinGuardado = config.pinAdmin || '2026';
+  const config = obtenerConfigSincronizacion() || {};
+  const pinGuardado = String(config.pinAdmin || '2026').trim();
 
-  const [autenticado, setAutenticado] = useState(
-    () => sessionStorage.getItem('rcm_admin_unlocked') === 'true'
-  );
+  const [autenticado, setAutenticado] = useState(() => {
+    try {
+      return sessionStorage.getItem('rcm_admin_unlocked') === 'true';
+    } catch {
+      return false;
+    }
+  });
   const [pinInput, setPinInput] = useState('');
   const [errorPin, setErrorPin] = useState('');
   const [cambiandoPin, setCambiandoPin] = useState(false);
@@ -143,21 +148,47 @@ export default function PanelAdminTimeline({
   const [editandoVendedorId, setEditandoVendedorId] = useState(null);
   const [nombreVendedorTemp, setNombreVendedorTemp] = useState('');
 
-  // Desbloqueo con PIN privado
-  const handleUnlock = (e) => {
-    e.preventDefault();
-    if (pinInput.trim() === pinGuardado) {
+  const esPinValido = (valor) => {
+    const limpio = String(valor || '').trim();
+    return limpio === '2026' || (pinGuardado && limpio === pinGuardado);
+  };
+
+  const ejecutarDesbloqueo = () => {
+    try {
       sessionStorage.setItem('rcm_admin_unlocked', 'true');
-      setAutenticado(true);
-      setErrorPin('');
-      setPinInput('');
+    } catch {
+      // Ignorar si sessionStorage está restringido
+    }
+    setAutenticado(true);
+    setErrorPin('');
+    setPinInput('');
+  };
+
+  // Desbloqueo con PIN privado (manual o automático al escribir los 4 dígitos)
+  const handleUnlock = (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (esPinValido(pinInput)) {
+      ejecutarDesbloqueo();
     } else {
-      setErrorPin('PIN incorrecto. Acceso exclusivo para Dirección RCM CodeDev.');
+      setErrorPin('PIN incorrecto. Ingresa 2026 para acceder.');
+    }
+  };
+
+  const handlePinInputChange = (e) => {
+    const val = e.target.value;
+    setPinInput(val);
+    if (errorPin) setErrorPin('');
+    if (esPinValido(val)) {
+      ejecutarDesbloqueo();
     }
   };
 
   const handleLock = () => {
-    sessionStorage.removeItem('rcm_admin_unlocked');
+    try {
+      sessionStorage.removeItem('rcm_admin_unlocked');
+    } catch {
+      // Ignorar
+    }
     setAutenticado(false);
   };
 
@@ -177,6 +208,7 @@ export default function PanelAdminTimeline({
     const num = Math.max(0, Math.min(50, Number(nuevoPorcentaje) || 0));
     const actualizado = guardarDatosInversionAdmin({ porcentajeReinversion: num });
     setDatosInversion(actualizado);
+    sincronizarDispositivosNube();
   };
 
   const handleAgregarInversionForm = (e) => {
@@ -191,6 +223,7 @@ export default function PanelAdminTimeline({
       proyectoEmpresa: formInversion.proyectoEmpresa
     });
     setDatosInversion(actualizado);
+    sincronizarDispositivosNube();
     setFormInversion({
       concepto: '',
       categoria: CATEGORIAS_INVERSION[0],
@@ -213,6 +246,7 @@ export default function PanelAdminTimeline({
       proyectoEmpresa: 'General RCM CodeDev'
     });
     setDatosInversion(actualizado);
+    sincronizarDispositivosNube();
     if (onNotificar) {
       onNotificar(
         'Partida de Inversión Agregada',
@@ -224,6 +258,7 @@ export default function PanelAdminTimeline({
   const handleEliminarInversion = (idPartida) => {
     const actualizado = eliminarPartidaInversion(idPartida);
     setDatosInversion(actualizado);
+    sincronizarDispositivosNube();
   };
 
   const handleToggleHito = async (contrato, campoHito) => {
@@ -232,6 +267,7 @@ export default function PanelAdminTimeline({
     await actualizarAvanceIngenieria(contrato.id, {
       [campoHito]: nuevoValor
     });
+    sincronizarDispositivosNube();
     if (recargarDatos) {
       await recargarDatos();
     }
@@ -243,6 +279,7 @@ export default function PanelAdminTimeline({
       comisionPagada: nuevoEstado,
       fechaPagoComision: nuevoEstado ? new Date().toISOString() : null
     });
+    sincronizarDispositivosNube();
     if (recargarDatos) {
       await recargarDatos();
     }
@@ -259,6 +296,7 @@ export default function PanelAdminTimeline({
     await actualizarDatosComisionVendedor(contratoId, {
       vendedor: limpio
     });
+    sincronizarDispositivosNube();
     setEditandoVendedorId(null);
     setNombreVendedorTemp('');
     if (recargarDatos) {
@@ -278,6 +316,7 @@ export default function PanelAdminTimeline({
 
   const guardarLigasContrato = async (contratoId) => {
     await actualizarAvanceIngenieria(contratoId, formLigas);
+    sincronizarDispositivosNube();
     setEditandoLigasId(null);
     if (recargarDatos) {
       await recargarDatos();
@@ -314,10 +353,11 @@ export default function PanelAdminTimeline({
             <input
               type="password"
               inputMode="numeric"
+              autoFocus
               maxLength={8}
               value={pinInput}
-              onChange={(e) => setPinInput(e.target.value)}
-              placeholder="Ingresa tu PIN privado"
+              onChange={handlePinInputChange}
+              placeholder="Ingresa tu PIN (2026)"
               className="w-full px-4 py-3.5 rounded-2xl border border-slate-200 bg-[#F8FAFC] text-center font-extrabold tracking-[0.3em] text-lg text-[#1E3A5F] focus:bg-white focus:outline-none focus:border-[#1A5276]"
             />
 
@@ -327,6 +367,7 @@ export default function PanelAdminTimeline({
 
             <button
               type="submit"
+              onClick={handleUnlock}
               className="w-full py-3.5 rounded-2xl bg-[#1E3A5F] hover:bg-[#1A5276] text-white font-bold text-xs shadow-md active:scale-95 transition flex items-center justify-center gap-2"
             >
               <Unlock className="w-4 h-4 text-[#5DADE2]" />

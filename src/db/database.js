@@ -183,7 +183,8 @@ export async function guardarContratoLocal(datosCierre) {
     clausulas: Array.isArray(datosCierre.clausulas) ? datosCierre.clausulas : [],
     firmaBase64: datosCierre.firmaBase64,
     sincronizado: false,
-    fechaSincronizacion: null
+    fechaSincronizacion: null,
+    ultimaModificacion: fechaISO
   };
 
   const id = await db.contratos.add(registro);
@@ -263,7 +264,8 @@ export async function registrarAbonoContrato(contratoId, datosAbono) {
     saldo: nuevoSaldo,
     liquidado: estaLiquidado,
     codigoLiberado: estaLiquidado,
-    sincronizado: false // Se marca pendiente para que también se pueda sincronizar el estado actualizado por correo
+    sincronizado: false,
+    ultimaModificacion: new Date().toISOString()
   };
 
   await db.contratos.update(contratoId, cambios);
@@ -335,7 +337,8 @@ export async function actualizarAvanceIngenieria(id, nuevosDatosEtapa) {
   };
 
   await db.contratos.update(id, {
-    etapaIngenieria: etapaActualizada
+    etapaIngenieria: etapaActualizada,
+    ultimaModificacion: new Date().toISOString()
   });
 
   return await db.contratos.get(id);
@@ -345,7 +348,10 @@ export async function actualizarAvanceIngenieria(id, nuevosDatosEtapa) {
  * Actualiza el vendedor asignado o el estado de pago de su comisión del 25%
  */
 export async function actualizarDatosComisionVendedor(id, cambiosComision) {
-  await db.contratos.update(id, cambiosComision);
+  await db.contratos.update(id, {
+    ...cambiosComision,
+    ultimaModificacion: new Date().toISOString()
+  });
   return await db.contratos.get(id);
 }
 
@@ -383,7 +389,8 @@ export function obtenerDatosInversionAdmin() {
     if (!raw) {
       return {
         porcentajeReinversion: 15,
-        partidas: []
+        partidas: [],
+        updatedAt: null
       };
     }
     const parsed = JSON.parse(raw);
@@ -392,12 +399,14 @@ export function obtenerDatosInversionAdmin() {
         typeof parsed.porcentajeReinversion === 'number'
           ? parsed.porcentajeReinversion
           : 15,
-      partidas: Array.isArray(parsed.partidas) ? parsed.partidas : []
+      partidas: Array.isArray(parsed.partidas) ? parsed.partidas : [],
+      updatedAt: parsed.updatedAt || null
     };
   } catch {
     return {
       porcentajeReinversion: 15,
-      partidas: []
+      partidas: [],
+      updatedAt: null
     };
   }
 }
@@ -406,7 +415,8 @@ export function guardarDatosInversionAdmin(datos) {
   const actual = obtenerDatosInversionAdmin();
   const nuevo = {
     ...actual,
-    ...datos
+    ...datos,
+    updatedAt: new Date().toISOString()
   };
   localStorage.setItem(STORAGE_INVERSION_KEY, JSON.stringify(nuevo));
   return nuevo;
@@ -424,7 +434,8 @@ export function agregarPartidaInversion({ concepto, categoria, monto, proyectoEm
   };
   const actualizado = {
     ...actual,
-    partidas: [nuevaPartida, ...actual.partidas]
+    partidas: [nuevaPartida, ...actual.partidas],
+    updatedAt: new Date().toISOString()
   };
   localStorage.setItem(STORAGE_INVERSION_KEY, JSON.stringify(actualizado));
   return actualizado;
@@ -434,8 +445,97 @@ export function eliminarPartidaInversion(idPartida) {
   const actual = obtenerDatosInversionAdmin();
   const actualizado = {
     ...actual,
-    partidas: actual.partidas.filter((p) => p.id !== idPartida)
+    partidas: actual.partidas.filter((p) => p.id !== idPartida),
+    updatedAt: new Date().toISOString()
   };
   localStorage.setItem(STORAGE_INVERSION_KEY, JSON.stringify(actualizado));
   return actualizado;
+}
+
+/**
+ * Sincronización Bidireccional Cloud (Celular <-> Ordenador) vía Netlify Blobs
+ * Sube los contratos e inversiones locales y descarga cualquier cierre levantado en otro dispositivo.
+ */
+export async function sincronizarDispositivosNube() {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    return { ok: false, offline: true, nuevosDescargados: 0 };
+  }
+
+  try {
+    const contratosLocales = await db.contratos.toArray();
+    const inversionesLocales = obtenerDatosInversionAdmin();
+
+    const response = await fetch('/.netlify/functions/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contratos: contratosLocales,
+        inversiones: inversionesLocales
+      })
+    });
+
+    if (!response.ok) {
+      return { ok: false, status: response.status, nuevosDescargados: 0 };
+    }
+
+    const data = await response.json();
+    if (!data || !data.ok) {
+      return { ok: false, nuevosDescargados: 0 };
+    }
+
+    const contratosNube = Array.isArray(data.contratos) ? data.contratos : [];
+    const todosLocalesActuales = await db.contratos.toArray();
+    const mapaLocalPorFolio = new Map();
+    for (const loc of todosLocalesActuales) {
+      const clave = loc.folio || `RCM-ID-${loc.id}-${loc.fecha}`;
+      mapaLocalPorFolio.set(clave, loc);
+    }
+
+    let nuevosDescargados = 0;
+    const ahora = new Date().toISOString();
+
+    for (const remoto of contratosNube) {
+      if (!remoto) continue;
+      const clave = remoto.folio || `RCM-ID-${remoto.id}-${remoto.fecha}`;
+      const existenteLocal = mapaLocalPorFolio.get(clave);
+
+      if (!existenteLocal) {
+        // Es un contrato creado en otro dispositivo (ej. en el celular y ahora llega al ordenador)
+        const copiaSinId = { ...remoto };
+        delete copiaSinId.id;
+        copiaSinId.sincronizado = true;
+        copiaSinId.fechaSincronizacion = ahora;
+        await db.contratos.add(copiaSinId);
+        nuevosDescargados++;
+      } else {
+        // Actualizar registro local con la versión fusionada de la nube conservando su id local
+        const copiaActualizada = {
+          ...existenteLocal,
+          ...remoto,
+          id: existenteLocal.id,
+          sincronizado: true,
+          fechaSincronizacion: existenteLocal.fechaSincronizacion || ahora
+        };
+        await db.contratos.put(copiaActualizada);
+      }
+    }
+
+    // Sincronizar también el apartado de inversiones si hay datos más recientes en la nube
+    if (data.inversiones && typeof data.inversiones === 'object') {
+      const fechaNube = new Date(data.inversiones.updatedAt || 0).getTime();
+      const fechaLocal = new Date(inversionesLocales.updatedAt || 0).getTime();
+      if (fechaNube > fechaLocal) {
+        localStorage.setItem(STORAGE_INVERSION_KEY, JSON.stringify(data.inversiones));
+      }
+    }
+
+    return {
+      ok: true,
+      nuevosDescargados,
+      totalNube: contratosNube.length
+    };
+  } catch (err) {
+    console.warn('Aviso en sincronización cloud entre dispositivos:', err);
+    return { ok: false, error: err.message, nuevosDescargados: 0 };
+  }
 }

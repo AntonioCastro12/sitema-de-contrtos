@@ -1,6 +1,8 @@
+/* stylelint-disable at-rule-no-unknown -- Tailwind directives are processed at build time. */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+/* stylelint-enable at-rule-no-unknown */
 
 @layer base {
   html, body {

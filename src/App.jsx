@@ -14,7 +14,10 @@ import BottomNav from './components/BottomNav';
 import WizardNuevoCierre from './components/WizardNuevoCierre';
 import ListaMisCierres from './components/ListaMisCierres';
 import PanelAdminTimeline from './components/PanelAdminTimeline';
-import { obtenerTodosLosContratos } from './db/database';
+import {
+  obtenerTodosLosContratos,
+  sincronizarDispositivosNube
+} from './db/database';
 import {
   procesarColaSincronizacion,
   obtenerConfigSincronizacion,
@@ -61,7 +64,7 @@ export default function App() {
     recargarContratos();
   }, [recargarContratos]);
 
-  // Función que ejecuta la cola de sincronización (Interna en la App + Correo opcional)
+  // Función que ejecuta la sincronización bidireccional (Celular <-> Ordenador) + Cola de correo
   const ejecutarSincronizacion = useCallback(
     async (origenAutomatico = false) => {
       const configActual = obtenerConfigSincronizacion();
@@ -72,46 +75,67 @@ export default function App() {
           mostrarNotificacion(
             'warning',
             'Dispositivo en Modo Offline',
-            'Los contratos siguen resguardados en tu celular.'
-          );
-        }
-        return;
-      }
-
-      const listaActual = await obtenerTodosLosContratos();
-      const pendientes = listaActual.filter((c) => !c.sincronizado);
-
-      if (pendientes.length === 0) {
-        if (!origenAutomatico) {
-          mostrarNotificacion(
-            'success',
-            'Todo Sincronizado',
-            'Todos los cierres ya están integrados en tu Línea de Tiempo.'
+            'Los contratos siguen resguardados en tu dispositivo.'
           );
         }
         return;
       }
 
       setIsSyncing(true);
-      setSyncProgress({ actual: 1, total: pendientes.length, empresa: pendientes[0].empresa });
 
       try {
-        const resultado = await procesarColaSincronizacion((progreso) => {
-          setSyncProgress(progreso);
-        });
+        const listaActual = await obtenerTodosLosContratos();
+        const pendientes = listaActual.filter((c) => !c.sincronizado);
 
-        await recargarContratos();
+        if (pendientes.length > 0) {
+          setSyncProgress({
+            actual: 1,
+            total: pendientes.length,
+            empresa: pendientes[0].empresa
+          });
+        }
 
-        if (resultado.sincronizados > 0) {
+        // 1. Procesar cola local / correo opcional
+        let resultadoCola = { sincronizados: 0 };
+        if (pendientes.length > 0) {
+          resultadoCola = await procesarColaSincronizacion((progreso) => {
+            setSyncProgress(progreso);
+          });
+        }
+
+        // 2. Sincronizar bidireccionalmente en la nube (Celular <-> Ordenador)
+        const resultadoNube = await sincronizarDispositivosNube();
+
+        const listaFinal = await recargarContratos();
+
+        if (resultadoNube.nuevosDescargados > 0) {
           mostrarNotificacion(
             'success',
-            `¡${resultado.sincronizados} ${
-              resultado.sincronizados === 1 ? 'Proyecto Sincronizado' : 'Proyectos Sincronizados'
-            } en la App!`,
-            'Ya puedes consultar sus fechas de entrega (QA, Staging y Producción) en la pestaña privada "Entregas".'
+            `¡${resultadoNube.nuevosDescargados} ${
+              resultadoNube.nuevosDescargados === 1
+                ? 'Cierre Recibido'
+                : 'Cierres Recibidos'
+            } desde otro dispositivo!`,
+            `Tu celular y ordenador están sincronizados (${listaFinal.length} proyectos en total).`
           );
-        } else if (resultado.errorDetalle) {
-          mostrarNotificacion('warning', 'Aviso de Sincronización', resultado.errorDetalle);
+        } else if (resultadoCola.sincronizados > 0) {
+          mostrarNotificacion(
+            'success',
+            `¡${resultadoCola.sincronizados} ${
+              resultadoCola.sincronizados === 1
+                ? 'Proyecto Sincronizado'
+                : 'Proyectos Sincronizados'
+            }!`,
+            'Tus datos ya están actualizados entre celular y ordenador.'
+          );
+        } else if (!origenAutomatico) {
+          mostrarNotificacion(
+            'success',
+            'Celular y Ordenador Sincronizados',
+            `Base de datos al día (${listaFinal.length} ${
+              listaFinal.length === 1 ? 'contrato' : 'contratos'
+            }).`
+          );
         }
       } catch (err) {
         console.error('Error en sincronización:', err);
@@ -122,6 +146,29 @@ export default function App() {
     },
     [mostrarNotificacion, recargarContratos]
   );
+
+  // Sincronización automática al abrir la app, al cambiar de pestaña y cada 20 segundos
+  useEffect(() => {
+    if (!navigator.onLine) return;
+    sincronizarDispositivosNube().then((res) => {
+      if (res && res.ok) {
+        recargarContratos();
+      }
+    });
+  }, [activeTab, recargarContratos]);
+
+  useEffect(() => {
+    const intervalo = setInterval(() => {
+      if (navigator.onLine) {
+        sincronizarDispositivosNube().then((res) => {
+          if (res && res.ok) {
+            recargarContratos();
+          }
+        });
+      }
+    }, 20000);
+    return () => clearInterval(intervalo);
+  }, [recargarContratos]);
 
   // Manejadores de eventos de red: window.addEventListener('online') y window.addEventListener('offline')
   useEffect(() => {
