@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Lock,
   Unlock,
@@ -105,8 +105,10 @@ export default function PanelAdminTimeline({
   onNotificar
 }) {
   const recargarDatos = onRecargar || onActualizarContratos;
-  const config = obtenerConfigSincronizacion() || {};
-  const pinGuardado = String(config.pinAdmin || '2026').trim();
+  const [pinGuardado, setPinGuardado] = useState(() => {
+    const cfg = obtenerConfigSincronizacion() || {};
+    return String(cfg.pinAdmin || '2026').trim();
+  });
 
   const [autenticado, setAutenticado] = useState(() => {
     try {
@@ -130,6 +132,20 @@ export default function PanelAdminTimeline({
   const [datosInversion, setDatosInversion] = useState(() =>
     obtenerDatosInversionAdmin()
   );
+
+  // Al abrir el Panel Admin (incluso en pantalla de bloqueo), sincronizar PIN e inversiones desde la nube
+  useEffect(() => {
+    let montado = true;
+    sincronizarDispositivosNube().then(() => {
+      if (!montado) return;
+      const cfg = obtenerConfigSincronizacion() || {};
+      setPinGuardado(String(cfg.pinAdmin || '2026').trim());
+      setDatosInversion(obtenerDatosInversionAdmin());
+    });
+    return () => {
+      montado = false;
+    };
+  }, []);
   const [formInversion, setFormInversion] = useState({
     concepto: '',
     categoria: CATEGORIAS_INVERSION[0],
@@ -150,7 +166,10 @@ export default function PanelAdminTimeline({
 
   const esPinValido = (valor) => {
     const limpio = String(valor || '').trim();
-    return limpio === '2026' || (pinGuardado && limpio === pinGuardado);
+    if (!limpio) return false;
+    const cfg = obtenerConfigSincronizacion() || {};
+    const pinVigente = String(cfg.pinAdmin || pinGuardado || '2026').trim();
+    return limpio === pinVigente || (!cfg.pinUpdatedAt && limpio === '2026');
   };
 
   const ejecutarDesbloqueo = () => {
@@ -170,7 +189,7 @@ export default function PanelAdminTimeline({
     if (esPinValido(pinInput)) {
       ejecutarDesbloqueo();
     } else {
-      setErrorPin('PIN incorrecto. Ingresa 2026 para acceder.');
+      setErrorPin('PIN incorrecto. Verifica tu código de acceso.');
     }
   };
 
@@ -192,14 +211,23 @@ export default function PanelAdminTimeline({
     setAutenticado(false);
   };
 
-  const handleGuardarNuevoPin = (e) => {
+  const handleGuardarNuevoPin = async (e) => {
     e.preventDefault();
-    if (nuevoPinInput.trim().length < 4) return;
-    guardarConfigSincronizacion({ pinAdmin: nuevoPinInput.trim() });
+    const nuevoPin = nuevoPinInput.trim();
+    if (nuevoPin.length < 4) return;
+    guardarConfigSincronizacion({
+      pinAdmin: nuevoPin,
+      pinUpdatedAt: new Date().toISOString()
+    });
+    setPinGuardado(nuevoPin);
     setCambiandoPin(false);
     setNuevoPinInput('');
+    await sincronizarDispositivosNube();
     if (onNotificar) {
-      onNotificar('PIN Actualizado', 'Tu nuevo código de acceso privado quedó guardado.');
+      onNotificar(
+        'PIN Sincronizado en todos tus dispositivos',
+        'Tu nuevo código de acceso privado quedó guardado en la nube para ordenador y celular.'
+      );
     }
   };
 

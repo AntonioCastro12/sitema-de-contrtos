@@ -465,12 +465,31 @@ export async function sincronizarDispositivosNube() {
     const contratosLocales = await db.contratos.toArray();
     const inversionesLocales = obtenerDatosInversionAdmin();
 
+    let configSyncLocal = { pinAdmin: '2026', pinUpdatedAt: null };
+    try {
+      const rawCfg = localStorage.getItem('rcm_sync_config_v1');
+      if (rawCfg) {
+        const parsedCfg = JSON.parse(rawCfg);
+        configSyncLocal = {
+          ...parsedCfg,
+          pinAdmin: parsedCfg.pinAdmin || '2026',
+          pinUpdatedAt: parsedCfg.pinUpdatedAt || null
+        };
+      }
+    } catch {
+      // ignore
+    }
+
     const response = await fetch('/.netlify/functions/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contratos: contratosLocales,
-        inversiones: inversionesLocales
+        inversiones: inversionesLocales,
+        configAdmin: {
+          pinAdmin: configSyncLocal.pinAdmin,
+          pinUpdatedAt: configSyncLocal.pinUpdatedAt
+        }
       })
     });
 
@@ -529,10 +548,33 @@ export async function sincronizarDispositivosNube() {
       }
     }
 
+    // Sincronizar el PIN de Administrador entre todos los dispositivos (Celular <-> Ordenador)
+    if (data.configAdmin && data.configAdmin.pinAdmin) {
+      const fechaPinNube = new Date(data.configAdmin.pinUpdatedAt || 0).getTime();
+      const fechaPinLocal = new Date(configSyncLocal.pinUpdatedAt || 0).getTime();
+      if (fechaPinNube >= fechaPinLocal && data.configAdmin.pinUpdatedAt) {
+        try {
+          const rawCfg = localStorage.getItem('rcm_sync_config_v1');
+          const baseCfg = rawCfg ? JSON.parse(rawCfg) : {};
+          localStorage.setItem(
+            'rcm_sync_config_v1',
+            JSON.stringify({
+              ...baseCfg,
+              pinAdmin: String(data.configAdmin.pinAdmin).trim(),
+              pinUpdatedAt: data.configAdmin.pinUpdatedAt
+            })
+          );
+        } catch {
+          // ignore
+        }
+      }
+    }
+
     return {
       ok: true,
       nuevosDescargados,
-      totalNube: contratosNube.length
+      totalNube: contratosNube.length,
+      pinAdmin: data.configAdmin?.pinAdmin || configSyncLocal.pinAdmin
     };
   } catch (err) {
     console.warn('Aviso en sincronización cloud entre dispositivos:', err);

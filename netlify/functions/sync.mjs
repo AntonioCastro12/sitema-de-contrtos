@@ -64,11 +64,15 @@ export default async (req) => {
           partidas: [],
           updatedAt: null
         },
+        configAdmin: {
+          pinAdmin: '2026',
+          pinUpdatedAt: null
+        },
         updatedAt: new Date().toISOString()
       };
     }
 
-    // GET: Descargar todos los contratos e inversiones de la nube al dispositivo (Celular o Laptop)
+    // GET: Descargar todos los contratos, inversiones y PIN de la nube al dispositivo
     if (req.method === 'GET') {
       const listaContratos = Object.values(estadoActual.contratosPorFolio || {}).sort(
         (a, b) => new Date(b.fecha) - new Date(a.fecha)
@@ -79,6 +83,7 @@ export default async (req) => {
           ok: true,
           contratos: listaContratos,
           inversiones: estadoActual.inversiones || { porcentajeReinversion: 15, partidas: [] },
+          configAdmin: estadoActual.configAdmin || { pinAdmin: '2026', pinUpdatedAt: null },
           updatedAt: estadoActual.updatedAt
         }),
         { status: 200, headers }
@@ -90,6 +95,7 @@ export default async (req) => {
       const body = await req.json();
       const contratosEntrantes = Array.isArray(body.contratos) ? body.contratos : [];
       const inversionesEntrantes = body.inversiones || null;
+      const configAdminEntrante = body.configAdmin || null;
 
       const mapa = { ...(estadoActual.contratosPorFolio || {}) };
 
@@ -127,9 +133,32 @@ export default async (req) => {
         }
       }
 
+      // Sincronizar PIN de Administrador entre todos los dispositivos
+      let configAdminFinal = estadoActual.configAdmin || {
+        pinAdmin: '2026',
+        pinUpdatedAt: null
+      };
+
+      if (
+        configAdminEntrante &&
+        typeof configAdminEntrante === 'object' &&
+        configAdminEntrante.pinAdmin
+      ) {
+        const fechaPinEntrante = new Date(configAdminEntrante.pinUpdatedAt || 0).getTime();
+        const fechaPinActual = new Date(configAdminFinal.pinUpdatedAt || 0).getTime();
+
+        if (fechaPinEntrante > fechaPinActual) {
+          configAdminFinal = {
+            pinAdmin: String(configAdminEntrante.pinAdmin).trim(),
+            pinUpdatedAt: configAdminEntrante.pinUpdatedAt || new Date().toISOString()
+          };
+        }
+      }
+
       const nuevoEstado = {
         contratosPorFolio: mapa,
         inversiones: inversionesFinales,
+        configAdmin: configAdminFinal,
         updatedAt: new Date().toISOString()
       };
 
@@ -144,6 +173,7 @@ export default async (req) => {
           ok: true,
           contratos: listaFusionada,
           inversiones: inversionesFinales,
+          configAdmin: configAdminFinal,
           updatedAt: nuevoEstado.updatedAt
         }),
         { status: 200, headers }
