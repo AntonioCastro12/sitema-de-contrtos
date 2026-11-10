@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    background-color: #F8FAFC;
+  }
+
+  /* Evitar zoom automático en inputs en iOS manteniendo accesibilidad */
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Custom scrollbar limpia para contenedores internos */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.75; }
+}
+
+.animate-pulse-subtle {
+  animation: pulse-subtle 2.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}

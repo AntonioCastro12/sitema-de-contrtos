@@ -1,0 +1,30 @@
+{
+  "name": "rcm-cierres-pwa",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "PWA Offline-First para Vendedores en Campo de RCM CodeDev",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "dexie": "^4.0.8",
+    "lucide-react": "^0.454.0",
+    "pdfmake": "^0.2.14",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "signature_pad": "^5.0.4"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.11",
+    "vite": "^5.4.6",
+    "vite-plugin-pwa": "^0.20.5"
+  }
+}
