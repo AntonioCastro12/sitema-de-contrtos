@@ -371,3 +371,71 @@ export async function sincronizarTodosEnAppInterna() {
 export async function eliminarContratoLocal(id) {
   return await db.contratos.delete(id);
 }
+
+const STORAGE_INVERSION_KEY = 'rcm_inversiones_admin_v1';
+
+/**
+ * Obtiene las partidas de inversión/costos operativos y el % de fondo de reinversión del administrador
+ */
+export function obtenerDatosInversionAdmin() {
+  try {
+    const raw = localStorage.getItem(STORAGE_INVERSION_KEY);
+    if (!raw) {
+      return {
+        porcentajeReinversion: 15,
+        partidas: []
+      };
+    }
+    const parsed = JSON.parse(raw);
+    return {
+      porcentajeReinversion:
+        typeof parsed.porcentajeReinversion === 'number'
+          ? parsed.porcentajeReinversion
+          : 15,
+      partidas: Array.isArray(parsed.partidas) ? parsed.partidas : []
+    };
+  } catch {
+    return {
+      porcentajeReinversion: 15,
+      partidas: []
+    };
+  }
+}
+
+export function guardarDatosInversionAdmin(datos) {
+  const actual = obtenerDatosInversionAdmin();
+  const nuevo = {
+    ...actual,
+    ...datos
+  };
+  localStorage.setItem(STORAGE_INVERSION_KEY, JSON.stringify(nuevo));
+  return nuevo;
+}
+
+export function agregarPartidaInversion({ concepto, categoria, monto, proyectoEmpresa }) {
+  const actual = obtenerDatosInversionAdmin();
+  const nuevaPartida = {
+    id: `inv-${Date.now()}`,
+    fecha: new Date().toISOString(),
+    concepto: (concepto || 'Inversión operativa').trim(),
+    categoria: categoria || 'Infraestructura / APIs',
+    monto: Math.max(0, Number(monto) || 0),
+    proyectoEmpresa: proyectoEmpresa || 'General RCM CodeDev'
+  };
+  const actualizado = {
+    ...actual,
+    partidas: [nuevaPartida, ...actual.partidas]
+  };
+  localStorage.setItem(STORAGE_INVERSION_KEY, JSON.stringify(actualizado));
+  return actualizado;
+}
+
+export function eliminarPartidaInversion(idPartida) {
+  const actual = obtenerDatosInversionAdmin();
+  const actualizado = {
+    ...actual,
+    partidas: actual.partidas.filter((p) => p.id !== idPartida)
+  };
+  localStorage.setItem(STORAGE_INVERSION_KEY, JSON.stringify(actualizado));
+  return actualizado;
+}

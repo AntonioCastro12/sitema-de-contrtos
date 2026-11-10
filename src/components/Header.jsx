@@ -109,13 +109,13 @@ export default function Header({
               onClick={() => onChangeTab('timeline')}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
                 activeTab === 'timeline'
-                  ? 'bg-[#65174E] text-white shadow-sm ring-1 ring-pink-300/40'
+                  ? 'bg-[#65174E] text-white shadow-sm'
                   : 'text-slate-200 hover:bg-white/10 hover:text-white'
               }`}
             >
               <BarChart3
                 className={`w-4 h-4 ${
-                  activeTab === 'timeline' ? 'text-amber-300' : 'text-[#5DADE2]'
+                  activeTab === 'timeline' ? 'text-[#5DADE2]' : 'text-[#5DADE2]'
                 }`}
               />
               <span>Panel Admin</span>

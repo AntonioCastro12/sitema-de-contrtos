@@ -74,7 +74,7 @@ export default function BottomNav({ activeTab, onChangeTab, totalContratos, pend
         >
           <BarChart3
             className={`w-4 h-4 ${
-              activeTab === 'timeline' ? 'text-amber-300' : 'text-slate-400'
+              activeTab === 'timeline' ? 'text-[#5DADE2]' : 'text-slate-400'
             }`}
           />
           <span className="text-[11px]">Admin</span>
