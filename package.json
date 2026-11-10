@@ -5,9 +5,9 @@
   "type": "module",
   "description": "PWA Offline-First para Vendedores en Campo de RCM CodeDev",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "dev": "node ./node_modules/vite/bin/vite.js",
+    "build": "node ./node_modules/vite/bin/vite.js build",
+    "preview": "node ./node_modules/vite/bin/vite.js preview"
   },
   "dependencies": {
     "dexie": "^4.0.8",
