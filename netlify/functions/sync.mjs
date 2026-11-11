@@ -59,6 +59,7 @@ export default async (req) => {
     if (!estadoActual || typeof estadoActual !== 'object') {
       estadoActual = {
         contratosPorFolio: {},
+        foliosEliminados: {},
         inversiones: {
           porcentajeReinversion: 15,
           partidas: [],
@@ -74,14 +75,19 @@ export default async (req) => {
 
     // GET: Descargar todos los contratos, inversiones y PIN de la nube al dispositivo
     if (req.method === 'GET') {
-      const listaContratos = Object.values(estadoActual.contratosPorFolio || {}).sort(
-        (a, b) => new Date(b.fecha) - new Date(a.fecha)
-      );
+      const eliminadosMap = estadoActual.foliosEliminados || {};
+      const listaContratos = Object.values(estadoActual.contratosPorFolio || {})
+        .filter((c) => {
+          const clave = c?.folio || `RCM-ID-${c?.id}-${c?.fecha}`;
+          return !eliminadosMap[clave];
+        })
+        .sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
 
       return new Response(
         JSON.stringify({
           ok: true,
           contratos: listaContratos,
+          foliosEliminados: Object.keys(eliminadosMap),
           inversiones: estadoActual.inversiones || { porcentajeReinversion: 15, partidas: [] },
           configAdmin: estadoActual.configAdmin || { pinAdmin: '2026', pinUpdatedAt: null },
           updatedAt: estadoActual.updatedAt
@@ -94,14 +100,33 @@ export default async (req) => {
     if (req.method === 'POST') {
       const body = await req.json();
       const contratosEntrantes = Array.isArray(body.contratos) ? body.contratos : [];
+      const foliosEliminadosEntrantes = Array.isArray(body.foliosEliminados)
+        ? body.foliosEliminados
+        : [];
       const inversionesEntrantes = body.inversiones || null;
       const configAdminEntrante = body.configAdmin || null;
 
+      const eliminadosMap = { ...(estadoActual.foliosEliminados || {}) };
+      const ahoraISO = new Date().toISOString();
+      for (const folioElim of foliosEliminadosEntrantes) {
+        if (folioElim && typeof folioElim === 'string') {
+          eliminadosMap[folioElim] = eliminadosMap[folioElim] || ahoraISO;
+        }
+      }
+
       const mapa = { ...(estadoActual.contratosPorFolio || {}) };
+
+      // Eliminar del mapa en la nube cualquier contrato cuyo folio haya sido borrado
+      for (const folioElim of Object.keys(eliminadosMap)) {
+        delete mapa[folioElim];
+      }
 
       for (const c of contratosEntrantes) {
         if (!c) continue;
         const claveFolio = c.folio || `RCM-ID-${c.id}-${c.fecha}`;
+        if (eliminadosMap[claveFolio]) {
+          continue;
+        }
         mapa[claveFolio] = elegirContratoMasReciente(mapa[claveFolio], {
           ...c,
           folio: claveFolio
@@ -157,6 +182,7 @@ export default async (req) => {
 
       const nuevoEstado = {
         contratosPorFolio: mapa,
+        foliosEliminados: eliminadosMap,
         inversiones: inversionesFinales,
         configAdmin: configAdminFinal,
         updatedAt: new Date().toISOString()
@@ -172,6 +198,7 @@ export default async (req) => {
         JSON.stringify({
           ok: true,
           contratos: listaFusionada,
+          foliosEliminados: Object.keys(eliminadosMap),
           inversiones: inversionesFinales,
           configAdmin: configAdminFinal,
           updatedAt: nuevoEstado.updatedAt

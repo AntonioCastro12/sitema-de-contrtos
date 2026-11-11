@@ -371,11 +371,57 @@ export async function sincronizarTodosEnAppInterna() {
   return pendientes.length;
 }
 
+const STORAGE_FOLIOS_ELIMINADOS_KEY = 'rcm_folios_eliminados_v1';
+
+export function obtenerFoliosEliminados() {
+  try {
+    const raw = localStorage.getItem(STORAGE_FOLIOS_ELIMINADOS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function registrarFolioEliminado(folio) {
+  if (!folio) return;
+  const actuales = obtenerFoliosEliminados();
+  if (!actuales.includes(folio)) {
+    actuales.push(folio);
+    localStorage.setItem(STORAGE_FOLIOS_ELIMINADOS_KEY, JSON.stringify(actuales));
+  }
+}
+
 /**
- * Elimina un contrato local por ID (opcional para mantenimiento)
+ * Elimina un contrato local por ID y registra su folio como eliminado para borrarlo también en la nube
  */
 export async function eliminarContratoLocal(id) {
-  return await db.contratos.delete(id);
+  const contrato = await db.contratos.get(id);
+  if (contrato) {
+    const claveFolio = contrato.folio || `RCM-ID-${contrato.id}-${contrato.fecha}`;
+    registrarFolioEliminado(claveFolio);
+  }
+  await db.contratos.delete(id);
+  sincronizarDispositivosNube();
+  return true;
+}
+
+/**
+ * Elimina todas las tarjetas/proyectos que ya están marcados como entregados en Producción
+ */
+export async function eliminarContratosEntregados() {
+  const todos = await db.contratos.toArray();
+  const entregados = todos.filter((c) => Boolean(c.etapaIngenieria?.produccionEntregado));
+  for (const c of entregados) {
+    const claveFolio = c.folio || `RCM-ID-${c.id}-${c.fecha}`;
+    registrarFolioEliminado(claveFolio);
+    await db.contratos.delete(c.id);
+  }
+  if (entregados.length > 0) {
+    sincronizarDispositivosNube();
+  }
+  return entregados.length;
 }
 
 const STORAGE_INVERSION_KEY = 'rcm_inversiones_admin_v1';
@@ -485,6 +531,7 @@ export async function sincronizarDispositivosNube() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contratos: contratosLocales,
+        foliosEliminados: obtenerFoliosEliminados(),
         inversiones: inversionesLocales,
         configAdmin: {
           pinAdmin: configSyncLocal.pinAdmin,
@@ -502,11 +549,29 @@ export async function sincronizarDispositivosNube() {
       return { ok: false, nuevosDescargados: 0 };
     }
 
+    const foliosEliminadosNube = Array.isArray(data.foliosEliminados)
+      ? data.foliosEliminados
+      : [];
+    const setFoliosEliminados = new Set([
+      ...obtenerFoliosEliminados(),
+      ...foliosEliminadosNube
+    ]);
+    if (setFoliosEliminados.size > 0) {
+      localStorage.setItem(
+        STORAGE_FOLIOS_ELIMINADOS_KEY,
+        JSON.stringify(Array.from(setFoliosEliminados))
+      );
+    }
+
     const contratosNube = Array.isArray(data.contratos) ? data.contratos : [];
     const todosLocalesActuales = await db.contratos.toArray();
     const mapaLocalPorFolio = new Map();
     for (const loc of todosLocalesActuales) {
       const clave = loc.folio || `RCM-ID-${loc.id}-${loc.fecha}`;
+      if (setFoliosEliminados.has(clave)) {
+        await db.contratos.delete(loc.id);
+        continue;
+      }
       mapaLocalPorFolio.set(clave, loc);
     }
 
@@ -516,6 +581,7 @@ export async function sincronizarDispositivosNube() {
     for (const remoto of contratosNube) {
       if (!remoto) continue;
       const clave = remoto.folio || `RCM-ID-${remoto.id}-${remoto.fecha}`;
+      if (setFoliosEliminados.has(clave)) continue;
       const existenteLocal = mapaLocalPorFolio.get(clave);
 
       if (!existenteLocal) {

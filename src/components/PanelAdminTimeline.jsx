@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Lock,
   Unlock,
@@ -33,6 +33,8 @@ import {
   guardarDatosInversionAdmin,
   agregarPartidaInversion,
   eliminarPartidaInversion,
+  eliminarContratoLocal,
+  eliminarContratosEntregados,
   sincronizarDispositivosNube
 } from '../db/database';
 import {
@@ -105,8 +107,10 @@ export default function PanelAdminTimeline({
   onNotificar
 }) {
   const recargarDatos = onRecargar || onActualizarContratos;
-  const config = obtenerConfigSincronizacion() || {};
-  const pinGuardado = String(config.pinAdmin || '2026').trim();
+  const [pinGuardado, setPinGuardado] = useState(() => {
+    const cfg = obtenerConfigSincronizacion() || {};
+    return String(cfg.pinAdmin || '2026').trim();
+  });
 
   const [autenticado, setAutenticado] = useState(() => {
     try {
@@ -130,6 +134,26 @@ export default function PanelAdminTimeline({
   const [datosInversion, setDatosInversion] = useState(() =>
     obtenerDatosInversionAdmin()
   );
+
+  // Sincronizar PIN e inversiones desde la nube al abrir el Panel Admin
+  useEffect(() => {
+    let montado = true;
+    sincronizarDispositivosNube().then(() => {
+      if (!montado) return;
+      const cfg = obtenerConfigSincronizacion() || {};
+      if (cfg.pinAdmin) {
+        setPinGuardado(String(cfg.pinAdmin).trim());
+      }
+      setDatosInversion(obtenerDatosInversionAdmin());
+      if (recargarDatos) {
+        recargarDatos();
+      }
+    });
+    return () => {
+      montado = false;
+    };
+  }, []);
+
   const [formInversion, setFormInversion] = useState({
     concepto: '',
     categoria: CATEGORIAS_INVERSION[0],
@@ -150,7 +174,10 @@ export default function PanelAdminTimeline({
 
   const esPinValido = (valor) => {
     const limpio = String(valor || '').trim();
-    return limpio === '2026' || (pinGuardado && limpio === pinGuardado);
+    if (!limpio) return false;
+    const cfg = obtenerConfigSincronizacion() || {};
+    const pinVigente = String(cfg.pinAdmin || pinGuardado || '2026').trim();
+    return limpio === pinVigente;
   };
 
   const ejecutarDesbloqueo = () => {
@@ -164,11 +191,13 @@ export default function PanelAdminTimeline({
     setPinInput('');
   };
 
-  // Desbloqueo con PIN privado (manual o automático al escribir los 4 dígitos)
+  // Desbloqueo con PIN privado (manual o automático al escribir el PIN)
   const handleUnlock = (e) => {
     if (e && e.preventDefault) e.preventDefault();
     if (esPinValido(pinInput)) {
       ejecutarDesbloqueo();
+    } else {
+      setErrorPin('Código de acceso incorrecto.');
     }
   };
 
@@ -190,14 +219,65 @@ export default function PanelAdminTimeline({
     setAutenticado(false);
   };
 
-  const handleGuardarNuevoPin = (e) => {
+  const handleGuardarNuevoPin = async (e) => {
     e.preventDefault();
-    if (nuevoPinInput.trim().length < 4) return;
-    guardarConfigSincronizacion({ pinAdmin: nuevoPinInput.trim() });
+    const nuevoPin = nuevoPinInput.trim();
+    if (nuevoPin.length < 4) return;
+    guardarConfigSincronizacion({
+      pinAdmin: nuevoPin,
+      pinUpdatedAt: new Date().toISOString()
+    });
+    setPinGuardado(nuevoPin);
     setCambiandoPin(false);
     setNuevoPinInput('');
+    await sincronizarDispositivosNube();
     if (onNotificar) {
-      onNotificar('PIN Actualizado', 'Tu nuevo código de acceso privado quedó guardado.');
+      onNotificar(
+        'PIN Sincronizado en todos tus dispositivos',
+        'Tu nuevo código de acceso privado quedó guardado en ordenador y celular.'
+      );
+    }
+  };
+
+  const handleEliminarTarjetaProyecto = async (contrato) => {
+    if (!contrato || !contrato.id) return;
+    const confirmar = window.confirm(
+      `¿Seguro que deseas borrar la tarjeta de "${contrato.empresa}"? Se eliminará de este dispositivo y de la nube.`
+    );
+    if (!confirmar) return;
+
+    await eliminarContratoLocal(contrato.id);
+    if (recargarDatos) {
+      await recargarDatos();
+    }
+    if (onNotificar) {
+      onNotificar(
+        'Tarjeta Eliminada',
+        `Se borró el proyecto "${contrato.empresa}" de todos tus dispositivos.`
+      );
+    }
+  };
+
+  const handleEliminarTodosEntregados = async () => {
+    const entregados = contratos.filter(
+      (c) => Boolean(c.etapaIngenieria?.produccionEntregado)
+    );
+    if (entregados.length === 0) return;
+
+    const confirmar = window.confirm(
+      `¿Deseas borrar las ${entregados.length} tarjetas que ya se entregaron en Producción?`
+    );
+    if (!confirmar) return;
+
+    const borrados = await eliminarContratosEntregados();
+    if (recargarDatos) {
+      await recargarDatos();
+    }
+    if (onNotificar) {
+      onNotificar(
+        'Proyectos Entregados Eliminados',
+        `Se borraron ${borrados} tarjetas entregadas en todos tus dispositivos.`
+      );
     }
   };
 
@@ -355,7 +435,7 @@ export default function PanelAdminTimeline({
               maxLength={8}
               value={pinInput}
               onChange={handlePinInputChange}
-              placeholder="Ingresa tu PIN (2026)"
+              placeholder="Ingresa tu PIN privado"
               className="w-full px-4 py-3.5 rounded-2xl border border-slate-200 bg-[#F8FAFC] text-center font-extrabold tracking-[0.3em] text-lg text-[#1E3A5F] focus:bg-white focus:outline-none focus:border-[#1A5276]"
             />
 
@@ -1539,37 +1619,57 @@ export default function PanelAdminTimeline({
       {/* ==================== VISTA 3: LÍNEA DE TIEMPO DE ENTREGAS ==================== */}
       {vistaAdmin === 'timeline' && (
         <div className="space-y-5">
-          <div className="grid grid-cols-3 gap-2 bg-slate-200/70 p-1.5 rounded-2xl text-xs max-w-md">
-            {[
-              { id: 'todos', label: `Todos (${contratos.length})` },
-              {
-                id: 'activos',
-                label: `En Desarrollo (${
-                  contratos.filter((c) => !c.etapaIngenieria?.produccionEntregado)
-                    .length
-                })`
-              },
-              {
-                id: 'completados',
-                label: `Entregados (${
-                  contratos.filter((c) => c.etapaIngenieria?.produccionEntregado)
-                    .length
-                })`
-              }
-            ].map((tab) => (
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="grid grid-cols-3 gap-2 bg-slate-200/70 p-1.5 rounded-2xl text-xs max-w-md w-full">
+              {[
+                { id: 'todos', label: `Todos (${contratos.length})` },
+                {
+                  id: 'activos',
+                  label: `En Desarrollo (${
+                    contratos.filter((c) => !c.etapaIngenieria?.produccionEntregado)
+                      .length
+                  })`
+                },
+                {
+                  id: 'completados',
+                  label: `Entregados (${
+                    contratos.filter((c) => c.etapaIngenieria?.produccionEntregado)
+                      .length
+                  })`
+                }
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setFiltroEstado(tab.id)}
+                  className={`py-2 rounded-xl font-bold transition ${
+                    filtroEstado === tab.id
+                      ? 'bg-white text-[#1E3A5F] shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {contratos.some((c) => c.etapaIngenieria?.produccionEntregado) && (
               <button
-                key={tab.id}
                 type="button"
-                onClick={() => setFiltroEstado(tab.id)}
-                className={`py-2 rounded-xl font-bold transition ${
-                  filtroEstado === tab.id
-                    ? 'bg-white text-[#1E3A5F] shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
+                onClick={handleEliminarTodosEntregados}
+                className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-2xl bg-[#65174E] hover:opacity-95 text-white font-bold text-xs shadow-sm transition shrink-0"
               >
-                {tab.label}
+                <Trash2 className="w-4 h-4 text-[#5DADE2]" />
+                <span>
+                  Borrar tarjetas entregadas (
+                  {
+                    contratos.filter((c) => c.etapaIngenieria?.produccionEntregado)
+                      .length
+                  }
+                  )
+                </span>
               </button>
-            ))}
+            )}
           </div>
 
           {contratosConTimeline.length === 0 ? (
@@ -1862,7 +1962,7 @@ export default function PanelAdminTimeline({
                         </div>
                       </div>
                     ) : (
-                      <div className="flex items-center justify-between gap-2 pt-1">
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
                         <button
                           type="button"
                           onClick={() => abrirEditorLigas(contrato)}
@@ -1872,14 +1972,30 @@ export default function PanelAdminTimeline({
                           <span>Pegar Ligas QA / Staging / Prod</span>
                         </button>
 
-                        <button
-                          type="button"
-                          onClick={() => descargarContratoPDF(contrato)}
-                          className="inline-flex items-center gap-1 px-3.5 py-2 rounded-xl bg-[#1E3A5F] hover:bg-[#1A5276] text-white font-bold text-xs transition"
-                        >
-                          <FileText className="w-3.5 h-3.5 text-[#5DADE2]" />
-                          <span>PDF</span>
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleEliminarTarjetaProyecto(contrato)}
+                            title="Borrar esta tarjeta entregada"
+                            className={`inline-flex items-center gap-1 px-3 py-2 rounded-xl font-bold text-xs transition ${
+                              completado
+                                ? 'bg-[#65174E] hover:opacity-95 text-white'
+                                : 'bg-[#F8FAFC] hover:bg-slate-200 border border-slate-200 text-[#65174E]'
+                            }`}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>{completado ? 'Borrar entregada' : 'Borrar'}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => descargarContratoPDF(contrato)}
+                            className="inline-flex items-center gap-1 px-3.5 py-2 rounded-xl bg-[#1E3A5F] hover:bg-[#1A5276] text-white font-bold text-xs transition"
+                          >
+                            <FileText className="w-3.5 h-3.5 text-[#5DADE2]" />
+                            <span>PDF</span>
+                          </button>
+                        </div>
                       </div>
                     )}
                   </article>

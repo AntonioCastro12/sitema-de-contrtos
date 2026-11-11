@@ -17,7 +17,8 @@ import {
   DollarSign,
   AlertCircle,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Trash2
 } from 'lucide-react';
 import {
   descargarContratoPDF,
@@ -34,7 +35,8 @@ import {
 import {
   desmarcarContratoSincronizado,
   registrarAbonoContrato,
-  calcularFechaLimiteLiquidacion
+  calcularFechaLimiteLiquidacion,
+  eliminarContratoLocal
 } from '../db/database';
 import { METODOS_PAGO_RCM } from '../services/clausulasCatalogo';
 
@@ -94,6 +96,19 @@ export default function ListaMisCierres({
     const config = obtenerConfigSincronizacion();
     const mailtoUrl = construirMailtoFallback(contrato, config.emailDestino);
     window.location.href = mailtoUrl;
+  };
+
+  const handleEliminarTarjeta = async (contrato) => {
+    if (!contrato || !contrato.id) return;
+    const confirmar = window.confirm(
+      `¿Seguro que deseas borrar la tarjeta de "${contrato.empresa}"? Se eliminará de este dispositivo y de la nube.`
+    );
+    if (!confirmar) return;
+
+    await eliminarContratoLocal(contrato.id);
+    if (onReintentarEnvio) {
+      await onReintentarEnvio();
+    }
   };
 
   const abrirModalAbono = (contrato) => {
@@ -475,6 +490,15 @@ export default function ListaMisCierres({
                     className="py-2.5 px-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center gap-1 active:scale-95 transition"
                   >
                     <Mail className="w-4 h-4 text-slate-600" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleEliminarTarjeta(contrato)}
+                    title="Borrar tarjeta"
+                    className="py-2.5 px-3 rounded-2xl bg-slate-100 hover:bg-[#65174E] text-[#65174E] hover:text-white font-bold text-xs flex items-center justify-center gap-1 active:scale-95 transition"
+                  >
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               </article>
