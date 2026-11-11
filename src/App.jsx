@@ -374,7 +374,7 @@ export default function App() {
               </label>
 
               <div className="pt-1 border-t border-slate-100">
-                <label className="block font-bold text-slate-600 mb-1 flex items-center gap-1.5">
+                <label className="block font-bold text-slate-600 mb-1 items-center gap-1.5">
                   <Mail className="w-3.5 h-3.5 text-[#65174E]" />
                   Copia por Correo Electrónico (Opcional)
                 </label>
@@ -390,7 +390,7 @@ export default function App() {
               </div>
 
               <div>
-                <label className="block font-bold text-slate-600 mb-1 flex items-center gap-1.5">
+                <label className="block font-bold text-slate-600 mb-1 items-center gap-1.5">
                   <KeyRound className="w-3.5 h-3.5 text-slate-400" />
                   Web3Forms Access Key (Opcional)
                 </label>
